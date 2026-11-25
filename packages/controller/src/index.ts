@@ -25,6 +25,7 @@ import {
 	canTransferStream,
 	chunkedStreamOf,
 	isChunkedStream,
+	streamOfChunked,
 } from "./streamfallback";
 import { CONTROLLERFRAME } from "./symbols";
 import type {
@@ -324,7 +325,9 @@ export class Controller {
 					method: data.method,
 					mode: data.mode,
 					referrer: data.referrer,
-					body: data.body,
+					body: isChunkedStream(data.body)
+						? streamOfChunked(data.body[CHUNKED_STREAM])
+						: data.body,
 					cache: data.cache,
 					clientId: data.clientId,
 				});
