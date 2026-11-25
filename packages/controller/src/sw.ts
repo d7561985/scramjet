@@ -5,6 +5,8 @@ import type { Controllerbound, SWbound } from "./types";
 import type { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import {
 	CHUNKED_STREAM,
+	canTransferStream,
+	chunkedStreamOf,
 	isChunkedStream,
 	streamOfChunked,
 } from "./streamfallback";
@@ -176,6 +178,13 @@ export async function route(event: FetchEvent): Promise<Response> {
 
 		const rawheaders: RawHeaders = [...event.request.headers];
 
+		// Same Safari limitation in the other direction: a request body stream can't be transferred
+		// to the controller, so send a port and pump it instead.
+		const requestBody =
+			event.request.body instanceof ReadableStream && !canTransferStream()
+				? chunkedStreamOf(event.request.body as ReadableStream<Uint8Array>)
+				: event.request.body;
+
 		const response = await tab.rpc.call(
 			"request",
 			{
@@ -185,18 +194,20 @@ export async function route(event: FetchEvent): Promise<Response> {
 				mode: event.request.mode,
 				referrer: event.request.referrer,
 				method: event.request.method,
-				body: event.request.body,
+				body: requestBody,
 				cache: event.request.cache,
 				forceCrossOriginIsolated: false,
 				initialHeaders: rawheaders,
 				rawClientUrl: client ? client.url : undefined,
 				clientId: event.clientId || event.resultingClientId,
 			},
-			event.request.body instanceof ReadableStream ||
-				// @ts-expect-error the types for fetchevent are messed up
-				event.request.body instanceof ArrayBuffer
-				? [event.request.body]
-				: undefined
+			isChunkedStream(requestBody)
+				? [requestBody[CHUNKED_STREAM]]
+				: requestBody instanceof ReadableStream ||
+					  // @ts-expect-error the types for fetchevent are messed up
+					  requestBody instanceof ArrayBuffer
+					? [requestBody]
+					: undefined
 		);
 
 		// Where the stream couldn't be transferred, the controller sent a port instead — rebuild the
